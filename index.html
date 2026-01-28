@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>럭키 박스 조 추첨 시스템</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
+        body { margin: 0; background: #050510; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+        #ui { position: absolute; top: 30px; width: 100%; text-align: center; z-index: 1000; pointer-events: none; }
+        .btn-group { display: flex; justify-content: center; gap: 20px; pointer-events: auto; }
+        button { 
+            padding: 15px 45px; font-size: 1.2rem; cursor: pointer; border: none; border-radius: 50px; 
+            color: white; font-weight: bold; transition: 0.3s; background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+        }
+        button:hover { transform: scale(1.1); box-shadow: 0 0 30px #00d2ff; }
+        button:disabled { background: #444; cursor: not-allowed; box-shadow: none; }
+        #status-text { color: #fff; font-size: 2rem; text-shadow: 0 0 10px #00d2ff; margin-bottom: 10px; min-height: 45px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="status-text">추첨 준비</div>
+        <div class="btn-group">
+            <button id="draw-btn" onclick="drawPhase()">조 추첨 시작</button>
+        </div>
+    </div>
+
+    <script>
+        const { Engine, Render, Runner, Bodies, Composite, Body, Events, Mouse, MouseConstraint } = Matter;
+        const engine = Engine.create();
+        const render = Render.create({
+            element: document.body, engine: engine,
+            options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
+        });
+
+        // 1. 내부 조별 명단 (이 명단은 학생들에게 노출되지 않습니다)
+        const groupsData = {
+            1: ["공원태", "강하늘", "강윤아", "이사랑", "남하준", "박소담", "박소윤"].sort(() => Math.random() - 0.5),
+            2: ["김온유", "신수연", "김하윤", "장지우", "장수연", "강로이", "이민아"].sort(() => Math.random() - 0.5),
+            3: ["이건우", "장주하", "정유석", "남하은", "강하람", "허태민"].sort(() => Math.random() - 0.5)
+        };
+
+        let nextGroupToDraw = 1; // 1 -> 2 -> 3 순서로 강제 고정
+        let balls = [];
+        let selectedBall = null;
+        let animProgress = 0;
+
+        const centerX = window.innerWidth / 2;
+        const centerY = 240;
+        const groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
+        const bucketBaseY = window.innerHeight - 75;
+        let groupCounters = [0, 0, 0];
+
+        function init() {
+            // 원형 본체 생성
+            for(let i=0; i<40; i++){
+                const angle = (Math.PI*2/40)*i;
+                Composite.add(engine.world, Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, {
+                    isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }
+                }));
+            }
+            // 하단 지지대
+            groupX.forEach(x => {
+                Composite.add(engine.world, Bodies.rectangle(x, window.innerHeight - 10, 180, 20, { isStatic: true, render: { fillStyle: '#00d2ff' }}));
+            });
+
+            // 모든 학생 공 생성
+            const allNames = [...groupsData[1], ...groupsData[2], ...groupsData[3]];
+            balls = allNames.map(name => {
+                let gNum = 0;
+                for(let g in groupsData) if(groupsData[g].includes(name)) gNum = parseInt(g);
+                const b = Bodies.circle(centerX, centerY, 22, {
+                    restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name
+                });
+                b.targetGroup = gNum;
+                return b;
+            });
+            Composite.add(engine.world, balls);
+            
+            const mouse = Mouse.create(render.canvas);
+            const mouseConstraint = MouseConstraint.create(engine, { mouse: mouse });
+            Events.on(mouseConstraint, 'mousedown', (event) => {
+                if (selectedBall && animProgress >= 1 && Matter.Bounds.contains(selectedBall.bounds, event.mouse.position)) {
+                    placeBall();
+                }
+            });
+        }
+
+        function drawPhase() {
+            if (selectedBall) return;
+
+            // 명단이 남아있는 다음 조를 찾음 (순환형)
+            let attempts = 0;
+            while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
+                nextGroupToDraw = (nextGroupToDraw % 3) + 1;
+                attempts++;
+            }
+
+            if (groupsData[nextGroupToDraw].length === 0) {
+                document.getElementById('status-text').innerText = "추첨이 모두 완료되었습니다!";
+                document.getElementById('draw-btn').disabled = true;
+                return;
+            }
+
+            // 정해진 조의 명단 중 랜덤하게 한 명을 뽑음
+            const targetName = groupsData[nextGroupToDraw].shift();
+            selectedBall = balls.find(b => b.label === targetName);
+            
+            document.getElementById('draw-btn').disabled = true;
+            document.getElementById('status-text').innerText = `${targetName} - ${selectedBall.targetGroup}조`;
+
+            animProgress = 0;
+            selectedBall.startPos = { x: selectedBall.position.x, y: selectedBall.position.y };
+            Body.setStatic(selectedBall, true);
+
+            // 다음 추첨은 다음 조 차례로 고정
+            nextGroupToDraw = (nextGroupToDraw % 3) + 1;
+        }
+
+        function placeBall() {
+            const groupIdx = selectedBall.targetGroup - 1;
+            const count = groupCounters[groupIdx];
+            const col = count % 2;
+            const row = Math.floor(count / 2);
+            
+            const targetX = groupX[groupIdx] + (col === 0 ? -34 : 34);
+            const targetY = bucketBaseY - (row * 50) - 25;
+
+            selectedBall.isHighlighted = false;
+            Body.setPosition(selectedBall, { x: targetX, y: targetY });
+
+            groupCounters[groupIdx]++;
+            document.getElementById('status-text').innerText = "추첨 준비";
+            
+            selectedBall = null;
+            document.getElementById('draw-btn').disabled = false;
+        }
+
+        Events.on(engine, 'beforeUpdate', () => {
+            if (selectedBall && animProgress < 1) {
+                animProgress += 0.025;
+                const lerpX = selectedBall.startPos.x + (centerX - selectedBall.startPos.x) * animProgress;
+                const lerpY = selectedBall.startPos.y + (centerY - selectedBall.startPos.y) * animProgress;
+                Body.setPosition(selectedBall, { x: lerpX, y: lerpY });
+                selectedBall.isHighlighted = true;
+            }
+            balls.forEach(b => {
+                if(!b.isStatic && !b.isHighlighted) {
+                    Body.applyForce(b, b.position, { x: (Math.random()-0.5)*0.025, y: (Math.random()-0.5)*0.025 });
+                    const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
+                    if(dist > 182) {
+                        const angle = Math.atan2(centerY - b.position.y, centerX - b.position.x);
+                        Body.setPosition(b, { x: centerX + Math.cos(angle)*170, y: centerY + Math.sin(angle)*170 });
+                    }
+                }
+            });
+        });
+
+        Events.on(render, 'afterRender', () => {
+            const ctx = render.context;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            balls.forEach(b => {
+                if (!b.isHighlighted) {
+                    ctx.fillStyle = "black";
+                    ctx.font = "bold 13px Noto Sans KR";
+                    ctx.fillText(b.label, b.position.x, b.position.y);
+                }
+            });
+
+            if (selectedBall) {
+                const currentRadius = 22 + (animProgress * 58);
+                ctx.save();
+                ctx.translate(selectedBall.position.x, selectedBall.position.y);
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
+                ctx.fillStyle = "#ff0055";
+                ctx.shadowBlur = 30; ctx.shadowColor = "#ff0055";
+                ctx.fill();
+                ctx.strokeStyle = "#fff";
+                ctx.lineWidth = 3 + (animProgress * 2);
+                ctx.stroke();
+                ctx.fillStyle = "white";
+                ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
+                ctx.fillText(selectedBall.label, 0, 0);
+                ctx.restore();
+            }
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 26px Noto Sans KR";
+            groupX.forEach((x, i) => {
+                ctx.fillText(`${i+1}조`, x, window.innerHeight - 40);
+            });
+        });
+
+        init();
+        Runner.run(Runner.create(), engine);
+        Render.run(render);
+    </script>
+</body>
+</html>
