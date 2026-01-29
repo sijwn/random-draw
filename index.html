@@ -49,11 +49,16 @@
             options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
         });
 
-        // 🔊 오디오 설정
+        // 🔊 오디오 설정 (요청하신 볼륨 밸런스 반영)
         const bgm = new Audio("quizbackground.mp3");
-        bgm.loop = true; // 무한 반복
+        bgm.loop = true;
+        bgm.volume = 0.1; // 기존의 50% 수준 (배경음 작게)
+
         const sfxTada = new Audio("tada.mp3");
+        sfxTada.volume = 1.0; // 기존의 200% 수준 (효과음 크게)
+
         const sfxSuccess = new Audio("https://actions.google.com/sounds/v1/cartoon/clink_clank.ogg");
+        sfxSuccess.volume = 1.0;
 
         const groupsData = {
             1: ["공원태", "강하늘", "강윤아", "이사랑", "남하준", "박소담", "박소윤"].sort(() => Math.random() - 0.5),
@@ -65,7 +70,7 @@
         let balls = [];
         let selectedBall = null;
         let animProgress = 0;
-        let isTurboMode = false; // 공 속도 제어용
+        let isTurboMode = false; // 공 가속 제어용
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
@@ -74,7 +79,7 @@
         let groupCounters = [0, 0, 0];
 
         function startEverything() {
-            bgm.play(); // 배경음악 무한 반복 시작
+            bgm.play();
             document.getElementById('intro-layer').style.opacity = '0';
             setTimeout(() => {
                 document.getElementById('intro-layer').style.display = 'none';
@@ -89,24 +94,23 @@
                     restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name
                 });
                 b.targetGroup = gNum;
-                Body.setVelocity(b, { x: (Math.random()-0.5)*5, y: (Math.random()-0.5)*5 }); // 처음에 약하게 튀기
+                // 초기 속도: 기존보다 좀 더 빠르게 설정
+                Body.setVelocity(b, { x: (Math.random()-0.5)*30, y: (Math.random()-0.5)*30 }); 
                 return b;
             });
             Composite.add(engine.world, balls);
             buildWalls();
         }
 
-        // 버튼 클릭 핸들러: 2초 지연 로직 포함
         function handleDrawClick() {
             if (selectedBall) return;
             
             document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = "섞는 중...";
             
-            sfxTada.play(); // tada.mp3 재생
-            isTurboMode = true; // 공 속도 늘리기
+            sfxTada.play(); 
+            isTurboMode = true; // 추첨 버튼 누른 뒤 공 속도를 확실하게 빠르게 증가
 
-            // 2초 뒤에 실제로 공을 뽑는 drawPhase 실행
             setTimeout(() => {
                 isTurboMode = false;
                 drawPhase();
@@ -121,13 +125,13 @@
             }
 
             if (groupsData[nextGroupToDraw].length === 0) {
-                document.getElementById('status-text').innerText = "전원 편성 완료!";
+                document.getElementById('status-text').innerText = "모든 학생 편성 완료!";
                 return;
             }
 
             const targetName = groupsData[nextGroupToDraw].shift();
             selectedBall = balls.find(b => b.label === targetName);
-            document.getElementById('status-text').innerText = `${targetName} - ${selectedBall.targetGroup}조`;
+            document.getElementById('status-text').innerText = `${targetName} - ${selectedBall.targetGroup}조 당첨!`;
 
             animProgress = 0;
             selectedBall.startPos = { x: selectedBall.position.x, y: selectedBall.position.y };
@@ -148,7 +152,7 @@
             selectedBall.isHighlighted = false;
             Body.setPosition(selectedBall, { x: targetX, y: targetY });
             groupCounters[groupIdx]++;
-            document.getElementById('status-text').innerText = "추첨 준비";
+            document.getElementById('status-text').innerText = "다음 학생을 기다립니다";
             selectedBall = null;
             document.getElementById('draw-btn').disabled = false;
         }
@@ -163,8 +167,8 @@
             }
             balls.forEach(b => {
                 if(!b.isStatic && !b.isHighlighted) {
-                    // 터보 모드일 때 훨씬 강한 힘을 줌
-                    const forceMag = isTurboMode ? 0.08 : 0.01; 
+                    // 가속 모드일 때 훨씬 강한 힘을 주어 역동적인 움직임 생성
+                    const forceMag = isTurboMode ? 0.06 : 0.035; // 평상시 속도(0.035)도 기존보다 빠르게 상향
                     Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
                     
                     const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
