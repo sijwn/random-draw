@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 마지막 1인까지 추첨</title>
+    <title>광주신성교회 겨울 캠프 조 추첨</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -26,7 +26,9 @@
 </head>
 <body>
     <div id="intro-layer">
-        <div style="color: #00d2ff; font-size: 3.5rem; margin-bottom: 45px;">LUCKY DRAW</div>
+        <div style="color: #00d2ff; font-size: 3rem; margin-bottom: 45px; text-align: center; line-height: 1.4;">
+            광주신성교회<br>겨울 캠프 조 추첨
+        </div>
         <button id="intro-btn" onclick="startEverything()">추첨 시작</button>
     </div>
 
@@ -113,7 +115,6 @@
 
         function drawPhase() {
             let attempts = 0;
-            // 인원이 남아있는 조를 찾을 때까지 순환
             while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
                 nextGroupToDraw = (nextGroupToDraw % 3) + 1;
                 attempts++;
@@ -138,7 +139,6 @@
             selectedBall.isHighlighted = false;
             selectedBall = null;
 
-            // 마지막 사람까지 뽑아서 바구니에 들어갔는지 확인
             if (getRemainingCount() === 0) {
                 startEnding();
             } else {
