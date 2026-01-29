@@ -8,40 +8,36 @@
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
         body { margin: 0; background: #050510; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
         
-        /* 인트로 화면 스타일 */
         #intro-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(5, 5, 16, 0.9); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 2000; transition: 0.5s;
+            background: rgba(5, 5, 16, 0.95); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 2000; transition: 0.8s;
         }
         #intro-btn {
-            padding: 25px 60px; font-size: 2rem; cursor: pointer; border: none; border-radius: 100px;
+            padding: 25px 65px; font-size: 2.2rem; cursor: pointer; border: none; border-radius: 100px;
             color: white; font-weight: bold; background: linear-gradient(45deg, #ff0055, #ff4d6d);
-            box-shadow: 0 0 30px rgba(255, 0, 85, 0.6); transition: 0.3s;
+            box-shadow: 0 0 35px rgba(255, 0, 85, 0.5); transition: 0.3s;
         }
-        #intro-btn:hover { transform: scale(1.1); box-shadow: 0 0 50px #ff0055; }
-
-        /* 메인 UI 스타일 */
-        #ui { position: absolute; top: 30px; width: 100%; text-align: center; z-index: 1000; pointer-events: none; opacity: 0; transition: 0.5s; }
+        #ui { position: absolute; top: 30px; width: 100%; text-align: center; z-index: 1000; pointer-events: none; opacity: 0; transition: 0.8s; }
         .btn-group { display: flex; justify-content: center; gap: 20px; pointer-events: auto; }
-        button { 
+        button#draw-btn { 
             padding: 15px 45px; font-size: 1.2rem; cursor: pointer; border: none; border-radius: 50px; 
-            color: white; font-weight: bold; transition: 0.3s; background: linear-gradient(45deg, #00d2ff, #3a7bd5);
-            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+            color: white; font-weight: bold; background: linear-gradient(45deg, #00d2ff, #3a7bd5);
         }
-        #status-text { color: #fff; font-size: 2rem; text-shadow: 0 0 10px #00d2ff; margin-bottom: 10px; min-height: 45px; }
+        button:disabled { background: #444; cursor: not-allowed; }
+        #status-text { color: #fff; font-size: 2.2rem; text-shadow: 0 0 15px #00d2ff; margin-bottom: 15px; min-height: 50px; }
     </style>
 </head>
 <body>
     <div id="intro-layer">
-        <div style="color: #00d2ff; font-size: 3rem; margin-bottom: 40px; text-shadow: 0 0 20px #00d2ff;">LUCKY DRAW</div>
+        <div style="color: #00d2ff; font-size: 3.5rem; margin-bottom: 45px;">LUCKY DRAW</div>
         <button id="intro-btn" onclick="startEverything()">추첨 시작</button>
     </div>
 
     <div id="ui">
         <div id="status-text">추첨 준비</div>
         <div class="btn-group">
-            <button id="draw-btn" onclick="drawPhase()">다음 학생 추첨</button>
+            <button id="draw-btn" onclick="handleDrawClick()">다음 학생 추첨</button>
         </div>
     </div>
 
@@ -53,6 +49,12 @@
             options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
         });
 
+        // 🔊 오디오 설정
+        const bgm = new Audio("quizbackground.mp3");
+        bgm.loop = true; // 무한 반복
+        const sfxTada = new Audio("tada.mp3");
+        const sfxSuccess = new Audio("https://actions.google.com/sounds/v1/cartoon/clink_clank.ogg");
+
         const groupsData = {
             1: ["공원태", "강하늘", "강윤아", "이사랑", "남하준", "박소담", "박소윤"].sort(() => Math.random() - 0.5),
             2: ["김온유", "신수연", "김하윤", "장지우", "장수연", "강로이", "이민아"].sort(() => Math.random() - 0.5),
@@ -63,7 +65,7 @@
         let balls = [];
         let selectedBall = null;
         let animProgress = 0;
-        let isStarted = false;
+        let isTurboMode = false; // 공 속도 제어용
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
@@ -71,28 +73,14 @@
         const bucketBaseY = window.innerHeight - 75;
         let groupCounters = [0, 0, 0];
 
-        // 초기 구조(벽)만 먼저 생성
-        function buildWalls() {
-            for(let i=0; i<40; i++){
-                const angle = (Math.PI*2/40)*i;
-                Composite.add(engine.world, Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, {
-                    isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }
-                }));
-            }
-            groupX.forEach(x => {
-                Composite.add(engine.world, Bodies.rectangle(x, window.innerHeight - 10, 180, 20, { isStatic: true, render: { fillStyle: '#00d2ff' }}));
-            });
-        }
-
-        // '추첨 시작' 버튼 클릭 시 호출
         function startEverything() {
+            bgm.play(); // 배경음악 무한 반복 시작
             document.getElementById('intro-layer').style.opacity = '0';
             setTimeout(() => {
                 document.getElementById('intro-layer').style.display = 'none';
                 document.getElementById('ui').style.opacity = '1';
-            }, 500);
+            }, 800);
 
-            // 공들 생성 및 팡 터뜨리기
             const allNames = [...groupsData[1], ...groupsData[2], ...groupsData[3]];
             balls = allNames.map(name => {
                 let gNum = 0;
@@ -101,17 +89,31 @@
                     restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name
                 });
                 b.targetGroup = gNum;
-                // 초기 속도 랜덤 부여 (사방으로 퍼짐)
-                Body.setVelocity(b, { x: (Math.random()-0.5)*20, y: (Math.random()-0.5)*20 });
+                Body.setVelocity(b, { x: (Math.random()-0.5)*5, y: (Math.random()-0.5)*5 }); // 처음에 약하게 튀기
                 return b;
             });
             Composite.add(engine.world, balls);
-            isStarted = true;
+            buildWalls();
+        }
+
+        // 버튼 클릭 핸들러: 2초 지연 로직 포함
+        function handleDrawClick() {
+            if (selectedBall) return;
+            
+            document.getElementById('draw-btn').disabled = true;
+            document.getElementById('status-text').innerText = "섞는 중...";
+            
+            sfxTada.play(); // tada.mp3 재생
+            isTurboMode = true; // 공 속도 늘리기
+
+            // 2초 뒤에 실제로 공을 뽑는 drawPhase 실행
+            setTimeout(() => {
+                isTurboMode = false;
+                drawPhase();
+            }, 2000);
         }
 
         function drawPhase() {
-            if (!isStarted || selectedBall) return;
-
             let attempts = 0;
             while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
                 nextGroupToDraw = (nextGroupToDraw % 3) + 1;
@@ -125,8 +127,6 @@
 
             const targetName = groupsData[nextGroupToDraw].shift();
             selectedBall = balls.find(b => b.label === targetName);
-            
-            document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = `${targetName} - ${selectedBall.targetGroup}조`;
 
             animProgress = 0;
@@ -136,6 +136,7 @@
         }
 
         function placeBall() {
+            sfxSuccess.play();
             const groupIdx = selectedBall.targetGroup - 1;
             const count = groupCounters[groupIdx];
             const col = count % 2;
@@ -162,7 +163,10 @@
             }
             balls.forEach(b => {
                 if(!b.isStatic && !b.isHighlighted) {
-                    Body.applyForce(b, b.position, { x: (Math.random()-0.5)*0.025, y: (Math.random()-0.5)*0.025 });
+                    // 터보 모드일 때 훨씬 강한 힘을 줌
+                    const forceMag = isTurboMode ? 0.08 : 0.01; 
+                    Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
+                    
                     const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
                     if(dist > 182) {
                         const angle = Math.atan2(centerY - b.position.y, centerX - b.position.x);
@@ -176,7 +180,6 @@
             const ctx = render.context;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-
             balls.forEach(b => {
                 if (!b.isHighlighted) {
                     ctx.fillStyle = "black";
@@ -184,7 +187,6 @@
                     ctx.fillText(b.label, b.position.x, b.position.y);
                 }
             });
-
             if (selectedBall) {
                 const currentRadius = 22 + (animProgress * 58);
                 ctx.save();
@@ -192,26 +194,32 @@
                 ctx.beginPath();
                 ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
                 ctx.fillStyle = "#ff0055";
-                ctx.shadowBlur = 30; ctx.shadowColor = "#ff0055";
                 ctx.fill();
                 ctx.strokeStyle = "#fff";
-                ctx.lineWidth = 3 + (animProgress * 2);
+                ctx.lineWidth = 4;
                 ctx.stroke();
                 ctx.fillStyle = "white";
                 ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
                 ctx.fillText(selectedBall.label, 0, 0);
                 ctx.restore();
             }
-
             ctx.fillStyle = "#ffffff";
             ctx.font = "bold 26px Noto Sans KR";
-            groupX.forEach((x, i) => {
-                ctx.fillText(`${i+1}조`, x, window.innerHeight - 40);
-            });
+            groupX.forEach((x, i) => ctx.fillText(`${i+1}조`, x, window.innerHeight - 40));
         });
 
-        // 초기화
-        buildWalls();
+        function buildWalls() {
+            for(let i=0; i<40; i++){
+                const angle = (Math.PI*2/40)*i;
+                Composite.add(engine.world, Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, {
+                    isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }
+                }));
+            }
+            groupX.forEach(x => {
+                Composite.add(engine.world, Bodies.rectangle(x, window.innerHeight - 10, 180, 20, { isStatic: true, render: { fillStyle: '#00d2ff' }}));
+            });
+        }
+
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, { mouse: mouse });
         Events.on(mouseConstraint, 'mousedown', (event) => {
