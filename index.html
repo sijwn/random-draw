@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 공간 활용 최적화</title>
+    <title>럭키 박스 조 추첨 시스템 - 복구 및 강화판</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -69,7 +69,7 @@
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
-        const RADIUS = 180; // 공들이 움직일 수 있는 원의 반지름
+        const RADIUS = 180;
         let groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
         let bucketBaseY = window.innerHeight - 75; 
         let groupCounters = [0, 0, 0];
@@ -82,13 +82,9 @@
             wallParts = [];
             for(let i=0; i<60; i++){
                 const angle = (Math.PI*2/60)*i;
-                // 벽을 더 두껍고 튼튼하게
-                const wall = Bodies.rectangle(centerX + Math.cos(angle)*(RADIUS+25), centerY + Math.sin(angle)*(RADIUS+25), 100, 200, { isStatic: true, angle: angle + Math.PI/2, render: { visible: false }});
+                // 이전처럼 얇지만 정확한 경계선 벽
+                const wall = Bodies.rectangle(centerX + Math.cos(angle)*RADIUS, centerY + Math.sin(angle)*RADIUS, 5, 40, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
                 wallParts.push(wall);
-                if(i % 2 === 0) {
-                    const guide = Bodies.rectangle(centerX + Math.cos(angle)*RADIUS, centerY + Math.sin(angle)*RADIUS, 3, 30, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
-                    wallParts.push(guide);
-                }
             }
             Composite.add(engine.world, wallParts);
         }
@@ -105,17 +101,9 @@
             balls = allNames.map(name => {
                 let gNum = 0;
                 for(let g in groupsData) if(groupsData[g].includes(name)) gNum = parseInt(g);
-                
-                // ⭐ 개선: 원 내부 전체 공간에 골고루 분산하여 생성
-                const randAngle = Math.random() * Math.PI * 2;
-                const randDist = Math.random() * (RADIUS - 40); // 벽에 너무 붙지 않게
-                const rx = centerX + Math.cos(randAngle) * randDist;
-                const ry = centerY + Math.sin(randAngle) * randDist;
-
-                const b = Bodies.circle(rx, ry, 22, { restitution: 0.9, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name });
+                const b = Bodies.circle(centerX, centerY, 22, { restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name });
                 b.targetGroup = gNum;
-                // 초기 속도 부여
-                Body.setVelocity(b, { x: (Math.random()-0.5)*15, y: (Math.random()-0.5)*15 }); 
+                Body.setVelocity(b, { x: (Math.random()-0.5)*30, y: (Math.random()-0.5)*30 }); 
                 return b;
             });
             Composite.add(engine.world, balls);
@@ -161,7 +149,7 @@
         }
 
         function placeBall() {
-            sfxTada.pause(); sfxTada.currentTime = 0;
+            sfxTada.pause(); sfxTada.currentTime = 0; // 버그 수정: 다음 추첨을 위해 사운드 리셋
             sfxSuccess.play();
             moveBallToBucket(selectedBall);
             selectedBall.isHighlighted = false;
@@ -227,23 +215,12 @@
             if(!isEnded) {
                 balls.forEach(b => {
                     if(!b.isStatic && !b.isHighlighted && b !== lastPendingBall) {
-                        // 상시 가속력 부여하여 정체 방지
-                        const forceMag = isTurboMode ? 0.08 : 0.025; 
+                        const forceMag = isTurboMode ? 0.08 : 0.035; 
                         Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
-                        
-                        // 경계 탈출 방지 및 반사 로직
-                        const distVec = Vector.sub(b.position, {x: centerX, y: centerY});
-                        const dist = Vector.magnitude(distVec);
+                        const dist = Vector.magnitude(Vector.sub(b.position, {x: centerX, y: centerY}));
                         if(dist > RADIUS - 22) {
-                            const normal = Vector.normalise(distVec);
-                            const vel = b.velocity;
-                            // 법선 벡터를 기준으로 속도 반사
-                            const dot = Vector.dot(vel, normal);
-                            if(dot > 0) {
-                                Body.setVelocity(b, Vector.sub(vel, Vector.mult(normal, 2 * dot)));
-                            }
-                            // 위치 강제 보정
-                            Body.setPosition(b, Vector.add({x: centerX, y: centerY}, Vector.mult(normal, RADIUS - 23)));
+                            const normal = Vector.normalise(Vector.sub({x: centerX, y: centerY}, b.position));
+                            Body.setVelocity(b, Vector.mult(normal, Vector.magnitude(b.velocity)));
                         }
                     }
                 });
@@ -254,6 +231,7 @@
             const ctx = render.context;
             ctx.textAlign = "center"; ctx.textBaseline = "middle";
             const ballRadius = isEnded ? 22 * 1.5 : 22;
+
             balls.forEach(b => {
                 if (!b.isHighlighted) {
                     ctx.beginPath(); ctx.arc(b.position.x, b.position.y, ballRadius, 0, Math.PI * 2);
@@ -291,11 +269,7 @@
             }
         });
 
-        const runner = Runner.create();
-        Events.on(runner, "beforeTick", () => {
-            for (let i = 0; i < 6; i++) { Engine.update(engine, 1000 / 60 / 6); }
-        });
-        Runner.run(runner, engine);
+        Runner.run(Runner.create(), engine);
         Render.run(render);
     </script>
 </body>
