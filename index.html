@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 복구 및 강화판</title>
+    <title>럭키 박스 조 추첨 시스템 - 최종 연출 개선판</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -38,7 +38,7 @@
     </div>
 
     <script>
-        const { Engine, Render, Runner, Bodies, Composite, Body, Events, Mouse, MouseConstraint, Vector } = Matter;
+        const { Engine, Render, Runner, Bodies, Composite, Body, Events, Mouse, MouseConstraint } = Matter;
         const engine = Engine.create();
         const render = Render.create({
             element: document.body, engine: engine,
@@ -61,7 +61,7 @@
         let nextGroupToDraw = 1;
         let balls = [];
         let selectedBall = null;
-        let lastPendingBall = null;
+        let lastPendingBall = null; // 마지막 남은 공 임시 저장
         let animProgress = 0;
         let isTurboMode = false;
         let isEnded = false; 
@@ -69,24 +69,12 @@
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
-        const RADIUS = 180;
         let groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
         let bucketBaseY = window.innerHeight - 75; 
         let groupCounters = [0, 0, 0];
 
         function getRemainingCount() {
             return groupsData[1].length + groupsData[2].length + groupsData[3].length;
-        }
-
-        function buildWalls() {
-            wallParts = [];
-            for(let i=0; i<60; i++){
-                const angle = (Math.PI*2/60)*i;
-                // 이전처럼 얇지만 정확한 경계선 벽
-                const wall = Bodies.rectangle(centerX + Math.cos(angle)*RADIUS, centerY + Math.sin(angle)*RADIUS, 5, 40, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
-                wallParts.push(wall);
-            }
-            Composite.add(engine.world, wallParts);
         }
 
         function startEverything() {
@@ -103,7 +91,7 @@
                 for(let g in groupsData) if(groupsData[g].includes(name)) gNum = parseInt(g);
                 const b = Bodies.circle(centerX, centerY, 22, { restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name });
                 b.targetGroup = gNum;
-                Body.setVelocity(b, { x: (Math.random()-0.5)*30, y: (Math.random()-0.5)*30 }); 
+                Body.setVelocity(b, { x: (Math.random()-0.5)*7, y: (Math.random()-0.5)*7 }); 
                 return b;
             });
             Composite.add(engine.world, balls);
@@ -114,7 +102,8 @@
             if (selectedBall || getRemainingCount() === 0) return;
             document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = "섞는 중...";
-            sfxTada.currentTime = 0; sfxTada.play(); 
+            sfxTada.currentTime = 0;
+            sfxTada.play(); 
             isTurboMode = true; 
 
             setTimeout(() => {
@@ -126,9 +115,12 @@
         function drawPhase() {
             let remaining = getRemainingCount();
             if(remaining === 2) {
+                // 한 명은 추첨
                 const targetIdx = groupsData[nextGroupToDraw].length > 0 ? nextGroupToDraw : (nextGroupToDraw % 3) + 1;
                 const targetName = groupsData[targetIdx].shift();
                 selectedBall = balls.find(b => b.label === targetName);
+                
+                // 마지막 한 명은 대기
                 const lastGroupIdx = groupsData[1].length > 0 ? 1 : (groupsData[2].length > 0 ? 2 : 3);
                 const lastName = groupsData[lastGroupIdx].shift();
                 lastPendingBall = balls.find(b => b.label === lastName);
@@ -141,6 +133,7 @@
                 const targetName = groupsData[nextGroupToDraw].shift();
                 selectedBall = balls.find(b => b.label === targetName);
             }
+
             document.getElementById('status-text').innerText = `${selectedBall.label} - ${selectedBall.targetGroup}조 당첨!`;
             animProgress = 0;
             selectedBall.startPos = { x: selectedBall.position.x, y: selectedBall.position.y };
@@ -149,15 +142,21 @@
         }
 
         function placeBall() {
-            sfxTada.pause(); sfxTada.currentTime = 0; // 버그 수정: 다음 추첨을 위해 사운드 리셋
+            sfxTada.pause(); sfxTada.currentTime = 0;
             sfxSuccess.play();
+            
+            // 1. 빨간 공(선택된 공) 배치
+            const groupIdx = selectedBall.targetGroup - 1;
             moveBallToBucket(selectedBall);
             selectedBall.isHighlighted = false;
             selectedBall = null;
+
+            // 2. 마지막 남은 공이 있다면 동시에 배치
             if (lastPendingBall) {
                 moveBallToBucket(lastPendingBall);
                 lastPendingBall = null;
             }
+
             if (getRemainingCount() === 0) startEnding();
             else {
                 document.getElementById('status-text').innerText = "추첨 준비";
@@ -170,7 +169,11 @@
             const count = groupCounters[gIdx];
             const col = count % 2;
             const row = Math.floor(count / 2);
-            Body.setPosition(ball, { x: groupX[gIdx] + (col === 0 ? -34 : 34), y: bucketBaseY - (row * 50) - 25 });
+            
+            Body.setPosition(ball, {
+                x: groupX[gIdx] + (col === 0 ? -34 : 34),
+                y: bucketBaseY - (row * 50) - 25
+            });
             Body.setStatic(ball, true);
             groupCounters[gIdx]++;
         }
@@ -180,26 +183,37 @@
             document.getElementById('status-text').innerText = "추첨 완료! 결과를 확인하세요.";
             document.getElementById('draw-btn').innerText = "추첨 완료!";
             document.getElementById('draw-btn').disabled = true;
+
             wallParts.forEach(p => Composite.remove(engine.world, p));
             
             const targetY = window.innerHeight / 2 + 130; 
             const targetX = [window.innerWidth * 0.22, window.innerWidth * 0.5, window.innerWidth * 0.78];
+            
             let moveProgress = 0;
             const originalGroupX = [...groupX];
             const originalBucketY = bucketBaseY;
 
             const moveInterval = setInterval(() => {
                 moveProgress += 0.02;
-                if(moveProgress >= 1) { clearInterval(moveInterval); return; }
+                if(moveProgress >= 1) {
+                    clearInterval(moveInterval);
+                    return;
+                }
+                
                 groupX = originalGroupX.map((ox, i) => ox + (targetX[i] - ox) * moveProgress);
                 bucketBaseY = originalBucketY + (targetY - originalBucketY) * moveProgress;
+
                 balls.forEach(b => {
                     const gIdx = b.targetGroup - 1;
                     const bList = balls.filter(v => v.targetGroup === b.targetGroup);
                     const bCount = bList.indexOf(b);
-                    const col = bCount % 2; const row = Math.floor(bCount / 2);
+                    const col = bCount % 2;
+                    const row = Math.floor(bCount / 2);
                     const spacing = 65; 
-                    Body.setPosition(b, { x: groupX[gIdx] + (col === 0 ? -45 : 45), y: bucketBaseY - (row * spacing + 35) });
+                    Body.setPosition(b, {
+                        x: groupX[gIdx] + (col === 0 ? -45 : 45),
+                        y: bucketBaseY - (row * spacing + 35)
+                    });
                 });
             }, 20);
         }
@@ -214,13 +228,14 @@
             }
             if(!isEnded) {
                 balls.forEach(b => {
+                    // 선택된 공이나 대기 중인 마지막 공은 물리 힘을 받지 않음
                     if(!b.isStatic && !b.isHighlighted && b !== lastPendingBall) {
-                        const forceMag = isTurboMode ? 0.08 : 0.035; 
+                        const forceMag = isTurboMode ? 0.06 : 0.02; 
                         Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
-                        const dist = Vector.magnitude(Vector.sub(b.position, {x: centerX, y: centerY}));
-                        if(dist > RADIUS - 22) {
-                            const normal = Vector.normalise(Vector.sub({x: centerX, y: centerY}, b.position));
-                            Body.setVelocity(b, Vector.mult(normal, Vector.magnitude(b.velocity)));
+                        const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
+                        if(dist > 182) {
+                            const angle = Math.atan2(centerY - b.position.y, centerX - b.position.x);
+                            Body.setPosition(b, { x: centerX + Math.cos(angle)*175, y: centerY + Math.sin(angle)*175 });
                         }
                     }
                 });
@@ -229,34 +244,56 @@
 
         Events.on(render, 'afterRender', () => {
             const ctx = render.context;
-            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
             const ballRadius = isEnded ? 22 * 1.5 : 22;
 
             balls.forEach(b => {
                 if (!b.isHighlighted) {
-                    ctx.beginPath(); ctx.arc(b.position.x, b.position.y, ballRadius, 0, Math.PI * 2);
-                    ctx.fillStyle = "white"; ctx.fill(); ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1; ctx.stroke();
+                    ctx.beginPath();
+                    ctx.arc(b.position.x, b.position.y, ballRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = "white";
+                    ctx.fill();
+                    ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1; ctx.stroke();
                     ctx.fillStyle = "black";
                     ctx.font = isEnded ? "bold 18px Noto Sans KR" : "bold 13px Noto Sans KR";
                     ctx.fillText(b.label, b.position.x, b.position.y);
                 }
             });
+
             if (selectedBall) {
                 const currentRadius = 22 + (animProgress * 58);
-                ctx.save(); ctx.translate(selectedBall.position.x, selectedBall.position.y);
+                ctx.save();
+                ctx.translate(selectedBall.position.x, selectedBall.position.y);
                 ctx.beginPath(); ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
                 ctx.fillStyle = "#ff0055"; ctx.fill();
                 ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
                 ctx.fillStyle = "white"; ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
-                ctx.fillText(selectedBall.label, 0, 0); ctx.restore();
+                ctx.fillText(selectedBall.label, 0, 0);
+                ctx.restore();
             }
+
             const lineScale = isEnded ? 1.5 : 1;
             groupX.forEach((x, i) => {
-                ctx.fillStyle = "#00d2ff"; ctx.fillRect(x - 100 * lineScale, bucketBaseY + 10, 200 * lineScale, 10);
-                ctx.fillStyle = "#ffffff"; ctx.font = `bold ${26 * lineScale}px Noto Sans KR`;
+                ctx.fillStyle = "#00d2ff";
+                ctx.fillRect(x - 100 * lineScale, bucketBaseY + 10, 200 * lineScale, 10);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = `bold ${26 * lineScale}px Noto Sans KR`;
                 ctx.fillText(`${i+1}조`, x, bucketBaseY + 50 * lineScale);
             });
         });
+
+        function buildWalls() {
+            wallParts = [];
+            for(let i=0; i<40; i++){
+                const angle = (Math.PI*2/40)*i;
+                const wall = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, { isStatic: true, angle: angle + Math.PI/2, render: { visible: false }});
+                wallParts.push(wall);
+                const guide = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 5, 40, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
+                wallParts.push(guide);
+            }
+            Composite.add(engine.world, wallParts);
+        }
 
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, { mouse: mouse });
