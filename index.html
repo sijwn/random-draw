@@ -52,10 +52,10 @@
         // 🔊 오디오 설정 (요청하신 볼륨 밸런스 반영)
         const bgm = new Audio("quizbackground.mp3");
         bgm.loop = true;
-        bgm.volume = 0.01; // 기존의 50% 수준 (배경음 작게)
+        bgm.volume = 0.05; // 기존의 50% 수준 (배경음 작게)
 
         const sfxTada = new Audio("tada.mp3");
-        sfxTada.volume = 5.0; // 기존의 200% 수준 (효과음 크게)
+        sfxTada.volume = 2.0; // 기존의 200% 수준 (효과음 크게)
 
         const sfxSuccess = new Audio("https://actions.google.com/sounds/v1/cartoon/clink_clank.ogg");
         sfxSuccess.volume = 1.0;
@@ -168,7 +168,7 @@
             balls.forEach(b => {
                 if(!b.isStatic && !b.isHighlighted) {
                     // 가속 모드일 때 훨씬 강한 힘을 주어 역동적인 움직임 생성
-                    const forceMag = isTurboMode ? 0.05 : 0.04; // 평상시 속도(0.035)도 기존보다 빠르게 상향
+                    const forceMag = isTurboMode ? 0.06 : 0.035; // 평상시 속도(0.035)도 기존보다 빠르게 상향
                     Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
                     
                     const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
