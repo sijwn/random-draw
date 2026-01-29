@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 최종판</title>
+    <title>럭키 박스 조 추첨 시스템 - 최종 결과 개선판</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -45,6 +45,7 @@
             options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
         });
 
+        // 오디오 경로 (사용자 로컬 파일 기반)
         const bgm = new Audio("quizbackground.mp3");
         bgm.loop = true; bgm.volume = 0.05; 
         const sfxTada = new Audio("tada.mp3");
@@ -63,16 +64,14 @@
         let selectedBall = null;
         let animProgress = 0;
         let isTurboMode = false;
-        let isEnded = false; // 모든 추첨 완료 여부
-        let endScale = 1.0; // 엔딩 시 크기 조절용
-        let wallParts = []; // 중앙 원형 벽 저장용
+        let isEnded = false; 
+        let wallParts = []; 
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
         let groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
-        let bucketBaseY = window.innerHeight - 75;
+        let bucketBaseY = window.innerHeight - 75; // 초기 위치
         let groupCounters = [0, 0, 0];
-        let groupFloors = [];
 
         function getRemainingCount() {
             return groupsData[1].length + groupsData[2].length + groupsData[3].length;
@@ -101,11 +100,9 @@
 
         function handleDrawClick() {
             if (selectedBall || getRemainingCount() === 0) return;
-            
             document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = "섞는 중...";
-            
-            sfxTada.currentTime = 0; // 사운드 리셋 (버그 수정)
+            sfxTada.currentTime = 0;
             sfxTada.play(); 
             isTurboMode = true; 
 
@@ -116,24 +113,18 @@
         }
 
         function drawPhase() {
-            let attempts = 0;
-            const remaining = getRemainingCount();
-
-            // 2명 남았을 때 특수 로직
+            let remaining = getRemainingCount();
             if(remaining === 2) {
-                // 한 명은 추첨(selected), 나머지는 자동 이동
                 const targetIdx = groupsData[nextGroupToDraw].length > 0 ? nextGroupToDraw : (nextGroupToDraw % 3) + 1;
                 const targetName = groupsData[targetIdx].shift();
                 selectedBall = balls.find(b => b.label === targetName);
                 
-                // 나머지 한 명 찾기
                 const lastGroupIdx = groupsData[1].length > 0 ? 1 : (groupsData[2].length > 0 ? 2 : 3);
                 const lastName = groupsData[lastGroupIdx].shift();
                 const lastBall = balls.find(b => b.label === lastName);
-                
-                // 마지막 공은 즉시 바구니로 이동 예약
                 autoPlaceBall(lastBall);
             } else {
+                let attempts = 0;
                 while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
                     nextGroupToDraw = (nextGroupToDraw % 3) + 1;
                     attempts++;
@@ -154,32 +145,33 @@
             const count = groupCounters[groupIdx];
             const col = count % 2;
             const row = Math.floor(count / 2);
-            const tX = groupX[groupIdx] + (col === 0 ? -34 : 34);
-            const tY = bucketBaseY - (row * 50) - 25;
-            Body.setPosition(ball, { x: tX, y: tY });
+            Body.setPosition(ball, {
+                x: groupX[groupIdx] + (col === 0 ? -34 : 34),
+                y: bucketBaseY - (row * 50) - 25
+            });
             Body.setStatic(ball, true);
             groupCounters[groupIdx]++;
         }
 
         function placeBall() {
-            sfxTada.pause(); sfxTada.currentTime = 0; // 사운드 중단 및 초기화 (버그 수정)
+            sfxTada.pause(); sfxTada.currentTime = 0;
             sfxSuccess.play();
             
             const groupIdx = selectedBall.targetGroup - 1;
             const count = groupCounters[groupIdx];
             const col = count % 2;
             const row = Math.floor(count / 2);
-            const targetX = groupX[groupIdx] + (col === 0 ? -34 : 34);
-            const targetY = bucketBaseY - (row * 50) - 25;
 
             selectedBall.isHighlighted = false;
-            Body.setPosition(selectedBall, { x: targetX, y: targetY });
+            Body.setPosition(selectedBall, {
+                x: groupX[groupIdx] + (col === 0 ? -34 : 34),
+                y: bucketBaseY - (row * 50) - 25
+            });
             groupCounters[groupIdx]++;
             selectedBall = null;
 
-            if (getRemainingCount() === 0) {
-                startEnding();
-            } else {
+            if (getRemainingCount() === 0) startEnding();
+            else {
                 document.getElementById('status-text').innerText = "추첨 준비";
                 document.getElementById('draw-btn').disabled = false;
             }
@@ -191,14 +183,12 @@
             document.getElementById('draw-btn').innerText = "추첨 완료!";
             document.getElementById('draw-btn').disabled = true;
 
-            // 1. 중앙 벽 제거
             wallParts.forEach(p => Composite.remove(engine.world, p));
             
-            // 2. 바닥 및 공들 이동 애니메이션 (2초간)
-            const targetY = window.innerHeight / 2 + 50;
-            const targetX = [window.innerWidth * 0.25, window.innerWidth * 0.5, window.innerWidth * 0.75];
+            // ⭐ 개선: 바구니를 더 아래쪽으로, 중앙으로 정렬
+            const targetY = window.innerHeight / 2 + 130; // 아래로 더 내림
+            const targetX = [window.innerWidth * 0.22, window.innerWidth * 0.5, window.innerWidth * 0.78];
             
-            // 공들의 상대적 위치 유지를 위해 바닥부터 이동
             let moveProgress = 0;
             const originalGroupX = [...groupX];
             const originalBucketY = bucketBaseY;
@@ -207,22 +197,24 @@
                 moveProgress += 0.02;
                 if(moveProgress >= 1) {
                     clearInterval(moveInterval);
-                    endScale = 1.3; // 결과 보기 좋게 확대
                     return;
                 }
                 
                 groupX = originalGroupX.map((ox, i) => ox + (targetX[i] - ox) * moveProgress);
                 bucketBaseY = originalBucketY + (targetY - originalBucketY) * moveProgress;
 
-                // 공들의 위치도 강제로 업데이트 (Static이므로)
                 balls.forEach(b => {
                     const gIdx = b.targetGroup - 1;
-                    const bCount = balls.filter((v, i) => v.targetGroup === b.targetGroup && balls.indexOf(v) < balls.indexOf(b)).length;
+                    const bList = balls.filter(v => v.targetGroup === b.targetGroup);
+                    const bCount = bList.indexOf(b);
                     const col = bCount % 2;
                     const row = Math.floor(bCount / 2);
+                    
+                    // ⭐ 개선: 엔딩 시 공 크기 증가에 맞춰 간격(spacing)도 확대 (50 -> 65)
+                    const spacing = 65; 
                     Body.setPosition(b, {
-                        x: groupX[gIdx] + (col === 0 ? -34 : 34) * (isEnded ? 1.3 : 1),
-                        y: bucketBaseY - (row * 50 + 25) * (isEnded ? 1.3 : 1)
+                        x: groupX[gIdx] + (col === 0 ? -45 : 45),
+                        y: bucketBaseY - (row * spacing + 35)
                     });
                 });
             }, 20);
@@ -255,15 +247,26 @@
             const ctx = render.context;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            const scale = isEnded ? 1.3 : 1;
+            
+            // ⭐ 개선: 엔딩 시 공 크기 1.5배 확대
+            const ballRadius = isEnded ? 22 * 1.5 : 22;
 
             balls.forEach(b => {
                 if (!b.isHighlighted) {
+                    ctx.beginPath();
+                    ctx.arc(b.position.x, b.position.y, ballRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = "white";
+                    ctx.fill();
+                    ctx.strokeStyle = "#ccc";
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
                     ctx.fillStyle = "black";
-                    ctx.font = `bold ${13 * scale}px Noto Sans KR`;
+                    ctx.font = isEnded ? "bold 18px Noto Sans KR" : "bold 13px Noto Sans KR";
                     ctx.fillText(b.label, b.position.x, b.position.y);
                 }
             });
+
             if (selectedBall) {
                 const currentRadius = 22 + (animProgress * 58);
                 ctx.save();
@@ -275,22 +278,28 @@
                 ctx.fillText(selectedBall.label, 0, 0);
                 ctx.restore();
             }
+
+            // 바구니 지지대 그리기
+            const lineScale = isEnded ? 1.5 : 1;
             ctx.fillStyle = "#ffffff";
-            ctx.font = `bold ${26 * scale}px Noto Sans KR`;
+            ctx.font = `bold ${26 * lineScale}px Noto Sans KR`;
             groupX.forEach((x, i) => {
-                // 바닥 선 그리기
                 ctx.fillStyle = "#00d2ff";
-                ctx.fillRect(x - 90 * scale, bucketBaseY + 10 * scale, 180 * scale, 10 * scale);
+                ctx.fillRect(x - 100 * lineScale, bucketBaseY + 10, 200 * lineScale, 10);
                 ctx.fillStyle = "#ffffff";
-                ctx.fillText(`${i+1}조`, x, bucketBaseY + 45 * scale);
+                ctx.fillText(`${i+1}조`, x, bucketBaseY + 50 * lineScale);
             });
         });
 
         function buildWalls() {
             for(let i=0; i<40; i++){
                 const angle = (Math.PI*2/40)*i;
-                const wall = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }});
+                const wall = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, { isStatic: true, angle: angle + Math.PI/2, render: { visible: false }});
                 wallParts.push(wall);
+                
+                // 시각적 가이드 원 (실제 벽과 별도)
+                const guide = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 5, 40, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
+                wallParts.push(guide);
             }
             Composite.add(engine.world, wallParts);
         }
