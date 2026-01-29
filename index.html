@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 물리 엔진 강화판</title>
+    <title>럭키 박스 조 추첨 시스템 - 최종 완성본</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -39,12 +39,7 @@
 
     <script>
         const { Engine, Render, Runner, Bodies, Composite, Body, Events, Mouse, MouseConstraint, Vector } = Matter;
-        
-        // 물리 엔진 생성 및 설정
         const engine = Engine.create();
-        engine.constraintIterations = 10; // 제약 조건 계산 정밀도 향상
-        engine.positionIterations = 10;   // 위치 계산 정밀도 향상
-
         const render = Render.create({
             element: document.body, engine: engine,
             options: { width: window.innerWidth, height: window.innerHeight, wireframes: false, background: 'transparent' }
@@ -84,18 +79,10 @@
 
         function buildWalls() {
             wallParts = [];
-            // 더 조밀하고 두꺼운 벽 생성 (80개 파츠, 두께 200px)
-            for(let i=0; i<80; i++){
-                const angle = (Math.PI*2/80)*i;
-                const wall = Bodies.rectangle(
-                    centerX + Math.cos(angle)*205, // 반지름 약간 조정
-                    centerY + Math.sin(angle)*205, 
-                    100, 300, // 두께를 300으로 대폭 상향 (벽을 뚫기 불가능하게 함)
-                    { isStatic: true, angle: angle + Math.PI/2, render: { visible: false }, friction: 0 }
-                );
+            for(let i=0; i<60; i++){
+                const angle = (Math.PI*2/60)*i;
+                const wall = Bodies.rectangle(centerX + Math.cos(angle)*205, centerY + Math.sin(angle)*205, 100, 200, { isStatic: true, angle: angle + Math.PI/2, render: { visible: false }});
                 wallParts.push(wall);
-                
-                // 시각적 라인 (얇게 유지)
                 if(i % 2 === 0) {
                     const guide = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 3, 30, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: '#00d2ff' }});
                     wallParts.push(guide);
@@ -116,12 +103,14 @@
             balls = allNames.map(name => {
                 let gNum = 0;
                 for(let g in groupsData) if(groupsData[g].includes(name)) gNum = parseInt(g);
-                const b = Bodies.circle(centerX, centerY, 22, { 
-                    restitution: 0.9, // 반발력 아주 약간 하향 (안정성)
-                    friction: 0.001, 
-                    render: { fillStyle: '#ffffff' }, 
-                    label: name 
-                });
+                
+                // ⭐ 수정: 공을 뭉치지 않게 원 안의 무작위 위치에 분산 생성
+                const randAngle = Math.random() * Math.PI * 2;
+                const randDist = Math.random() * 100;
+                const rx = centerX + Math.cos(randAngle) * randDist;
+                const ry = centerY + Math.sin(randAngle) * randDist;
+
+                const b = Bodies.circle(rx, ry, 22, { restitution: 0.9, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name });
                 b.targetGroup = gNum;
                 Body.setVelocity(b, { x: (Math.random()-0.5)*10, y: (Math.random()-0.5)*10 }); 
                 return b;
@@ -134,8 +123,7 @@
             if (selectedBall || getRemainingCount() === 0) return;
             document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = "섞는 중...";
-            sfxTada.currentTime = 0;
-            sfxTada.play(); 
+            sfxTada.currentTime = 0; sfxTada.play(); 
             isTurboMode = true; 
 
             setTimeout(() => {
@@ -202,11 +190,13 @@
             document.getElementById('draw-btn').innerText = "추첨 완료!";
             document.getElementById('draw-btn').disabled = true;
             wallParts.forEach(p => Composite.remove(engine.world, p));
+            
             const targetY = window.innerHeight / 2 + 130; 
             const targetX = [window.innerWidth * 0.22, window.innerWidth * 0.5, window.innerWidth * 0.78];
             let moveProgress = 0;
             const originalGroupX = [...groupX];
             const originalBucketY = bucketBaseY;
+
             const moveInterval = setInterval(() => {
                 moveProgress += 0.02;
                 if(moveProgress >= 1) { clearInterval(moveInterval); return; }
@@ -236,14 +226,10 @@
                     if(!b.isStatic && !b.isHighlighted && b !== lastPendingBall) {
                         const forceMag = isTurboMode ? 0.08 : 0.025; 
                         Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
-                        
-                        // 강력한 경계 탈출 방지 로직
                         const dist = Vector.magnitude(Vector.sub(b.position, {x: centerX, y: centerY}));
                         if(dist > 180) {
                             const normal = Vector.normalise(Vector.sub({x: centerX, y: centerY}, b.position));
-                            const speed = Vector.magnitude(b.velocity);
-                            Body.setVelocity(b, Vector.mult(normal, speed > 5 ? 5 : speed));
-                            Body.setPosition(b, Vector.add({x: centerX, y: centerY}, Vector.mult(Vector.neg(normal), 178)));
+                            Body.setVelocity(b, Vector.mult(normal, Vector.magnitude(b.velocity)));
                         }
                     }
                 });
@@ -267,7 +253,8 @@
                 const currentRadius = 22 + (animProgress * 58);
                 ctx.save(); ctx.translate(selectedBall.position.x, selectedBall.position.y);
                 ctx.beginPath(); ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
-                ctx.fillStyle = "#ff0055"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
+                ctx.fillStyle = "#ff0055"; ctx.fill();
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
                 ctx.fillStyle = "white"; ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
                 ctx.fillText(selectedBall.label, 0, 0); ctx.restore();
             }
@@ -290,13 +277,9 @@
             }
         });
 
-        // ⭐ 물리 엔진 업데이트 속도(Runner) 제어: 60fps 기준 substeps 적용
         const runner = Runner.create();
         Events.on(runner, "beforeTick", () => {
-            // 엔진 업데이트를 한 번의 틱에 여러 번 수행하여 계산 정밀도 향상
-            for (let i = 0; i < 6; i++) {
-                Engine.update(engine, 1000 / 60 / 6);
-            }
+            for (let i = 0; i < 6; i++) { Engine.update(engine, 1000 / 60 / 6); }
         });
         Runner.run(runner, engine);
         Render.run(render);
