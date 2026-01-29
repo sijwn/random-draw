@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템 - 최종 연출 개선판</title>
+    <title>럭키 박스 조 추첨 시스템 - 마지막 1인까지 추첨</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
@@ -61,7 +61,6 @@
         let nextGroupToDraw = 1;
         let balls = [];
         let selectedBall = null;
-        let lastPendingBall = null; // 마지막 남은 공 임시 저장
         let animProgress = 0;
         let isTurboMode = false;
         let isEnded = false; 
@@ -113,26 +112,15 @@
         }
 
         function drawPhase() {
-            let remaining = getRemainingCount();
-            if(remaining === 2) {
-                // 한 명은 추첨
-                const targetIdx = groupsData[nextGroupToDraw].length > 0 ? nextGroupToDraw : (nextGroupToDraw % 3) + 1;
-                const targetName = groupsData[targetIdx].shift();
-                selectedBall = balls.find(b => b.label === targetName);
-                
-                // 마지막 한 명은 대기
-                const lastGroupIdx = groupsData[1].length > 0 ? 1 : (groupsData[2].length > 0 ? 2 : 3);
-                const lastName = groupsData[lastGroupIdx].shift();
-                lastPendingBall = balls.find(b => b.label === lastName);
-            } else {
-                let attempts = 0;
-                while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
-                    nextGroupToDraw = (nextGroupToDraw % 3) + 1;
-                    attempts++;
-                }
-                const targetName = groupsData[nextGroupToDraw].shift();
-                selectedBall = balls.find(b => b.label === targetName);
+            let attempts = 0;
+            // 인원이 남아있는 조를 찾을 때까지 순환
+            while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
+                nextGroupToDraw = (nextGroupToDraw % 3) + 1;
+                attempts++;
             }
+
+            const targetName = groupsData[nextGroupToDraw].shift();
+            selectedBall = balls.find(b => b.label === targetName);
 
             document.getElementById('status-text').innerText = `${selectedBall.label} - ${selectedBall.targetGroup}조 당첨!`;
             animProgress = 0;
@@ -145,20 +133,15 @@
             sfxTada.pause(); sfxTada.currentTime = 0;
             sfxSuccess.play();
             
-            // 1. 빨간 공(선택된 공) 배치
             const groupIdx = selectedBall.targetGroup - 1;
             moveBallToBucket(selectedBall);
             selectedBall.isHighlighted = false;
             selectedBall = null;
 
-            // 2. 마지막 남은 공이 있다면 동시에 배치
-            if (lastPendingBall) {
-                moveBallToBucket(lastPendingBall);
-                lastPendingBall = null;
-            }
-
-            if (getRemainingCount() === 0) startEnding();
-            else {
+            // 마지막 사람까지 뽑아서 바구니에 들어갔는지 확인
+            if (getRemainingCount() === 0) {
+                startEnding();
+            } else {
                 document.getElementById('status-text').innerText = "추첨 준비";
                 document.getElementById('draw-btn').disabled = false;
             }
@@ -228,8 +211,7 @@
             }
             if(!isEnded) {
                 balls.forEach(b => {
-                    // 선택된 공이나 대기 중인 마지막 공은 물리 힘을 받지 않음
-                    if(!b.isStatic && !b.isHighlighted && b !== lastPendingBall) {
+                    if(!b.isStatic && !b.isHighlighted) {
                         const forceMag = isTurboMode ? 0.06 : 0.02; 
                         Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
                         const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
