@@ -2,12 +2,11 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>럭키 박스 조 추첨 시스템</title>
+    <title>럭키 박스 조 추첨 시스템 - 최종판</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@900&display=swap');
         body { margin: 0; background: #050510; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
-        
         #intro-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(5, 5, 16, 0.95); display: flex; flex-direction: column;
@@ -20,10 +19,7 @@
         }
         #ui { position: absolute; top: 30px; width: 100%; text-align: center; z-index: 1000; pointer-events: none; opacity: 0; transition: 0.8s; }
         .btn-group { display: flex; justify-content: center; gap: 20px; pointer-events: auto; }
-        button#draw-btn { 
-            padding: 15px 45px; font-size: 1.2rem; cursor: pointer; border: none; border-radius: 50px; 
-            color: white; font-weight: bold; background: linear-gradient(45deg, #00d2ff, #3a7bd5);
-        }
+        button#draw-btn { padding: 15px 45px; font-size: 1.2rem; cursor: pointer; border: none; border-radius: 50px; color: white; font-weight: bold; background: linear-gradient(45deg, #00d2ff, #3a7bd5); }
         button:disabled { background: #444; cursor: not-allowed; opacity: 0.7; }
         #status-text { color: #fff; font-size: 2.2rem; text-shadow: 0 0 15px #00d2ff; margin-bottom: 15px; min-height: 50px; }
     </style>
@@ -67,16 +63,19 @@
         let selectedBall = null;
         let animProgress = 0;
         let isTurboMode = false;
+        let isEnded = false; // 모든 추첨 완료 여부
+        let endScale = 1.0; // 엔딩 시 크기 조절용
+        let wallParts = []; // 중앙 원형 벽 저장용
 
         const centerX = window.innerWidth / 2;
         const centerY = 240;
-        const groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
-        const bucketBaseY = window.innerHeight - 75;
+        let groupX = [window.innerWidth * 0.2, window.innerWidth * 0.5, window.innerWidth * 0.8];
+        let bucketBaseY = window.innerHeight - 75;
         let groupCounters = [0, 0, 0];
+        let groupFloors = [];
 
-        // 모든 추첨이 완료되었는지 확인하는 함수
-        function isAllFinished() {
-            return groupsData[1].length === 0 && groupsData[2].length === 0 && groupsData[3].length === 0;
+        function getRemainingCount() {
+            return groupsData[1].length + groupsData[2].length + groupsData[3].length;
         }
 
         function startEverything() {
@@ -91,9 +90,7 @@
             balls = allNames.map(name => {
                 let gNum = 0;
                 for(let g in groupsData) if(groupsData[g].includes(name)) gNum = parseInt(g);
-                const b = Bodies.circle(centerX, centerY, 22, {
-                    restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name
-                });
+                const b = Bodies.circle(centerX, centerY, 22, { restitution: 0.95, friction: 0.001, render: { fillStyle: '#ffffff' }, label: name });
                 b.targetGroup = gNum;
                 Body.setVelocity(b, { x: (Math.random()-0.5)*7, y: (Math.random()-0.5)*7 }); 
                 return b;
@@ -103,10 +100,12 @@
         }
 
         function handleDrawClick() {
-            if (selectedBall || isAllFinished()) return;
+            if (selectedBall || getRemainingCount() === 0) return;
             
             document.getElementById('draw-btn').disabled = true;
             document.getElementById('status-text').innerText = "섞는 중...";
+            
+            sfxTada.currentTime = 0; // 사운드 리셋 (버그 수정)
             sfxTada.play(); 
             isTurboMode = true; 
 
@@ -118,23 +117,54 @@
 
         function drawPhase() {
             let attempts = 0;
-            while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
-                nextGroupToDraw = (nextGroupToDraw % 3) + 1;
-                attempts++;
+            const remaining = getRemainingCount();
+
+            // 2명 남았을 때 특수 로직
+            if(remaining === 2) {
+                // 한 명은 추첨(selected), 나머지는 자동 이동
+                const targetIdx = groupsData[nextGroupToDraw].length > 0 ? nextGroupToDraw : (nextGroupToDraw % 3) + 1;
+                const targetName = groupsData[targetIdx].shift();
+                selectedBall = balls.find(b => b.label === targetName);
+                
+                // 나머지 한 명 찾기
+                const lastGroupIdx = groupsData[1].length > 0 ? 1 : (groupsData[2].length > 0 ? 2 : 3);
+                const lastName = groupsData[lastGroupIdx].shift();
+                const lastBall = balls.find(b => b.label === lastName);
+                
+                // 마지막 공은 즉시 바구니로 이동 예약
+                autoPlaceBall(lastBall);
+            } else {
+                while (groupsData[nextGroupToDraw].length === 0 && attempts < 3) {
+                    nextGroupToDraw = (nextGroupToDraw % 3) + 1;
+                    attempts++;
+                }
+                const targetName = groupsData[nextGroupToDraw].shift();
+                selectedBall = balls.find(b => b.label === targetName);
             }
 
-            const targetName = groupsData[nextGroupToDraw].shift();
-            selectedBall = balls.find(b => b.label === targetName);
-            document.getElementById('status-text').innerText = `${targetName} - ${selectedBall.targetGroup}조 당첨!`;
-            
+            document.getElementById('status-text').innerText = `${selectedBall.label} - ${selectedBall.targetGroup}조 당첨!`;
             animProgress = 0;
             selectedBall.startPos = { x: selectedBall.position.x, y: selectedBall.position.y };
             Body.setStatic(selectedBall, true);
             nextGroupToDraw = (nextGroupToDraw % 3) + 1;
         }
 
+        function autoPlaceBall(ball) {
+            const groupIdx = ball.targetGroup - 1;
+            const count = groupCounters[groupIdx];
+            const col = count % 2;
+            const row = Math.floor(count / 2);
+            const tX = groupX[groupIdx] + (col === 0 ? -34 : 34);
+            const tY = bucketBaseY - (row * 50) - 25;
+            Body.setPosition(ball, { x: tX, y: tY });
+            Body.setStatic(ball, true);
+            groupCounters[groupIdx]++;
+        }
+
         function placeBall() {
+            sfxTada.pause(); sfxTada.currentTime = 0; // 사운드 중단 및 초기화 (버그 수정)
             sfxSuccess.play();
+            
             const groupIdx = selectedBall.targetGroup - 1;
             const count = groupCounters[groupIdx];
             const col = count % 2;
@@ -145,19 +175,57 @@
             selectedBall.isHighlighted = false;
             Body.setPosition(selectedBall, { x: targetX, y: targetY });
             groupCounters[groupIdx]++;
-            
             selectedBall = null;
 
-            // 추첨 종료 여부 판단
-            if (isAllFinished()) {
-                document.getElementById('status-text').innerText = "모든 추첨이 완료되었습니다!";
-                const btn = document.getElementById('draw-btn');
-                btn.innerText = "추첨 완료!";
-                btn.disabled = true; // 버튼 비활성화
+            if (getRemainingCount() === 0) {
+                startEnding();
             } else {
                 document.getElementById('status-text').innerText = "추첨 준비";
                 document.getElementById('draw-btn').disabled = false;
             }
+        }
+
+        function startEnding() {
+            isEnded = true;
+            document.getElementById('status-text').innerText = "추첨 완료! 결과를 확인하세요.";
+            document.getElementById('draw-btn').innerText = "추첨 완료!";
+            document.getElementById('draw-btn').disabled = true;
+
+            // 1. 중앙 벽 제거
+            wallParts.forEach(p => Composite.remove(engine.world, p));
+            
+            // 2. 바닥 및 공들 이동 애니메이션 (2초간)
+            const targetY = window.innerHeight / 2 + 50;
+            const targetX = [window.innerWidth * 0.25, window.innerWidth * 0.5, window.innerWidth * 0.75];
+            
+            // 공들의 상대적 위치 유지를 위해 바닥부터 이동
+            let moveProgress = 0;
+            const originalGroupX = [...groupX];
+            const originalBucketY = bucketBaseY;
+
+            const moveInterval = setInterval(() => {
+                moveProgress += 0.02;
+                if(moveProgress >= 1) {
+                    clearInterval(moveInterval);
+                    endScale = 1.3; // 결과 보기 좋게 확대
+                    return;
+                }
+                
+                groupX = originalGroupX.map((ox, i) => ox + (targetX[i] - ox) * moveProgress);
+                bucketBaseY = originalBucketY + (targetY - originalBucketY) * moveProgress;
+
+                // 공들의 위치도 강제로 업데이트 (Static이므로)
+                balls.forEach(b => {
+                    const gIdx = b.targetGroup - 1;
+                    const bCount = balls.filter((v, i) => v.targetGroup === b.targetGroup && balls.indexOf(v) < balls.indexOf(b)).length;
+                    const col = bCount % 2;
+                    const row = Math.floor(bCount / 2);
+                    Body.setPosition(b, {
+                        x: groupX[gIdx] + (col === 0 ? -34 : 34) * (isEnded ? 1.3 : 1),
+                        y: bucketBaseY - (row * 50 + 25) * (isEnded ? 1.3 : 1)
+                    });
+                });
+            }, 20);
         }
 
         Events.on(engine, 'beforeUpdate', () => {
@@ -168,28 +236,31 @@
                 Body.setPosition(selectedBall, { x: lerpX, y: lerpY });
                 selectedBall.isHighlighted = true;
             }
-            balls.forEach(b => {
-                if(!b.isStatic && !b.isHighlighted) {
-                    const forceMag = isTurboMode ? 0.06 : 0.02; 
-                    Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
-                    
-                    const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
-                    if(dist > 182) {
-                        const angle = Math.atan2(centerY - b.position.y, centerX - b.position.x);
-                        Body.setPosition(b, { x: centerX + Math.cos(angle)*175, y: centerY + Math.sin(angle)*175 });
+            if(!isEnded) {
+                balls.forEach(b => {
+                    if(!b.isStatic && !b.isHighlighted) {
+                        const forceMag = isTurboMode ? 0.06 : 0.02; 
+                        Body.applyForce(b, b.position, { x: (Math.random()-0.5)*forceMag, y: (Math.random()-0.5)*forceMag });
+                        const dist = Math.sqrt((b.position.x - centerX)**2 + (b.position.y - centerY)**2);
+                        if(dist > 182) {
+                            const angle = Math.atan2(centerY - b.position.y, centerX - b.position.x);
+                            Body.setPosition(b, { x: centerX + Math.cos(angle)*175, y: centerY + Math.sin(angle)*175 });
+                        }
                     }
-                }
-            });
+                });
+            }
         });
 
         Events.on(render, 'afterRender', () => {
             const ctx = render.context;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
+            const scale = isEnded ? 1.3 : 1;
+
             balls.forEach(b => {
                 if (!b.isHighlighted) {
                     ctx.fillStyle = "black";
-                    ctx.font = "bold 13px Noto Sans KR";
+                    ctx.font = `bold ${13 * scale}px Noto Sans KR`;
                     ctx.fillText(b.label, b.position.x, b.position.y);
                 }
             });
@@ -197,47 +268,41 @@
                 const currentRadius = 22 + (animProgress * 58);
                 ctx.save();
                 ctx.translate(selectedBall.position.x, selectedBall.position.y);
-                ctx.beginPath();
-                ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
-                ctx.fillStyle = "#ff0055";
-                ctx.fill();
-                ctx.strokeStyle = "#fff";
-                ctx.lineWidth = 4;
-                ctx.stroke();
-                ctx.fillStyle = "white";
-                ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
+                ctx.beginPath(); ctx.arc(0, 0, currentRadius, 0, Math.PI*2);
+                ctx.fillStyle = "#ff0055"; ctx.fill();
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.stroke();
+                ctx.fillStyle = "white"; ctx.font = `bold ${14 + (animProgress * 20)}px Noto Sans KR`;
                 ctx.fillText(selectedBall.label, 0, 0);
                 ctx.restore();
             }
             ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 26px Noto Sans KR";
-            groupX.forEach((x, i) => ctx.fillText(`${i+1}조`, x, window.innerHeight - 40));
+            ctx.font = `bold ${26 * scale}px Noto Sans KR`;
+            groupX.forEach((x, i) => {
+                // 바닥 선 그리기
+                ctx.fillStyle = "#00d2ff";
+                ctx.fillRect(x - 90 * scale, bucketBaseY + 10 * scale, 180 * scale, 10 * scale);
+                ctx.fillStyle = "#ffffff";
+                ctx.fillText(`${i+1}조`, x, bucketBaseY + 45 * scale);
+            });
         });
 
         function buildWalls() {
             for(let i=0; i<40; i++){
                 const angle = (Math.PI*2/40)*i;
-                Composite.add(engine.world, Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, {
-                    isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }
-                }));
+                const wall = Bodies.rectangle(centerX + Math.cos(angle)*200, centerY + Math.sin(angle)*200, 60, 60, { isStatic: true, angle: angle + Math.PI/2, render: { fillStyle: 'transparent', strokeStyle: '#00d2ff', lineWidth: 2 }});
+                wallParts.push(wall);
             }
-            groupX.forEach(x => {
-                Composite.add(engine.world, Bodies.rectangle(x, window.innerHeight - 10, 180, 20, { isStatic: true, render: { fillStyle: '#00d2ff' }}));
-            });
+            Composite.add(engine.world, wallParts);
         }
 
         const mouse = Mouse.create(render.canvas);
         const mouseConstraint = MouseConstraint.create(engine, { mouse: mouse });
-        
         Events.on(mouseConstraint, 'mousedown', (event) => {
             const mousePos = event.mouse.position;
             if (selectedBall && animProgress >= 1) {
                 const dx = mousePos.x - selectedBall.position.x;
                 const dy = mousePos.y - selectedBall.position.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance <= 80) {
-                    placeBall();
-                }
+                if (Math.sqrt(dx * dx + dy * dy) <= 80) placeBall();
             }
         });
 
